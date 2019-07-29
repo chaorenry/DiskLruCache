@@ -85,13 +85,17 @@ import java.util.regex.Pattern;
  * Callers should handle other problems by catching {@code IOException} and
  * responding appropriately.
  */
+//继承Closeable以保证可以关闭
 public final class DiskLruCache implements Closeable {
+  //常量日志文件
   static final String JOURNAL_FILE = "journal";
   static final String JOURNAL_FILE_TEMP = "journal.tmp";
   static final String JOURNAL_FILE_BACKUP = "journal.bkp";
   static final String MAGIC = "libcore.io.DiskLruCache";
   static final String VERSION_1 = "1";
+  //序列数量
   static final long ANY_SEQUENCE_NUMBER = -1;
+  //key筛选表达式
   static final String STRING_KEY_PATTERN = "[a-z0-9_-]{1,120}";
   static final Pattern LEGAL_KEY_PATTERN = Pattern.compile(STRING_KEY_PATTERN);
   private static final String CLEAN = "CLEAN";
@@ -143,11 +147,14 @@ public final class DiskLruCache implements Closeable {
   private final File journalFile;
   private final File journalFileTmp;
   private final File journalFileBackup;
+  //版本号，如果升级版本就会抛弃所有缓存，可以用来远程控制强制刷新缓存
   private final int appVersion;
   private long maxSize;
   private final int valueCount;
   private long size = 0;
+  //写日志的基类
   private Writer journalWriter;
+  //缓存实体
   private final LinkedHashMap<String, Entry> lruEntries =
       new LinkedHashMap<String, Entry>(0, 0.75f, true);
   private int redundantOpCount;
@@ -157,13 +164,17 @@ public final class DiskLruCache implements Closeable {
    * a sequence number each time an edit is committed. A snapshot is stale if
    * its sequence number is not equal to its entry's sequence number.
    */
+  //下一条目序列号，会被直接使用
   private long nextSequenceNumber = 0;
 
   /** This cache uses a single background thread to evict entries. */
+  //一个独立线程池单个后台线程，使用阻塞队列
   final ThreadPoolExecutor executorService =
       new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
+  //清空缓存的线程
   private final Callable<Void> cleanupCallable = new Callable<Void>() {
     public Void call() throws Exception {
+      //锁DiskLruCache
       synchronized (DiskLruCache.this) {
         if (journalWriter == null) {
           return null; // Closed.
@@ -583,6 +594,7 @@ public final class DiskLruCache implements Closeable {
    *
    * @return true if an entry was removed.
    */
+  //如果实体存在并且可移除，就drop掉。无法删除正在编辑的条目
   public synchronized boolean remove(String key) throws IOException {
     checkNotClosed();
     validateKey(key);
@@ -643,7 +655,7 @@ public final class DiskLruCache implements Closeable {
     journalWriter.close();
     journalWriter = null;
   }
-
+//从实体存储中移除最后一个
   private void trimToSize() throws IOException {
     while (size > maxSize) {
       Map.Entry<String, Entry> toEvict = lruEntries.entrySet().iterator().next();
