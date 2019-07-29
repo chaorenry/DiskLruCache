@@ -154,9 +154,10 @@ public final class DiskLruCache implements Closeable {
   private long size = 0;
   //写日志的基类
   private Writer journalWriter;
-  //缓存实体
+  //缓存实体的linkedHashMap
   private final LinkedHashMap<String, Entry> lruEntries =
       new LinkedHashMap<String, Entry>(0, 0.75f, true);
+
   private int redundantOpCount;
 
   /**
@@ -171,7 +172,7 @@ public final class DiskLruCache implements Closeable {
   //一个独立线程池单个后台线程，使用阻塞队列
   final ThreadPoolExecutor executorService =
       new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
-  //清空缓存的线程
+  //完全清理
   private final Callable<Void> cleanupCallable = new Callable<Void>() {
     public Void call() throws Exception {
       //锁DiskLruCache
@@ -179,9 +180,13 @@ public final class DiskLruCache implements Closeable {
         if (journalWriter == null) {
           return null; // Closed.
         }
+        //移除超出的实体
         trimToSize();
+        //是否需要重建日志
         if (journalRebuildRequired()) {
+
           rebuildJournal();
+          //操作数重置为0
           redundantOpCount = 0;
         }
       }
@@ -361,6 +366,7 @@ public final class DiskLruCache implements Closeable {
    * current journal if it exists.
    */
   private synchronized void rebuildJournal() throws IOException {
+    //关闭输出流
     if (journalWriter != null) {
       journalWriter.close();
     }
@@ -582,6 +588,7 @@ public final class DiskLruCache implements Closeable {
    * We only rebuild the journal when it will halve the size of the journal
    * and eliminate at least 2000 ops.
    */
+  //操作大于2000次 且 添加删除操作数大于实体数量，需要重建
   private boolean journalRebuildRequired() {
     final int redundantOpCompactThreshold = 2000;
     return redundantOpCount >= redundantOpCompactThreshold //
@@ -594,28 +601,38 @@ public final class DiskLruCache implements Closeable {
    *
    * @return true if an entry was removed.
    */
-  //如果实体存在并且可移除，就drop掉。无法删除正在编辑的条目
+  //如果实体存在并且可移除，就drop掉。无法删除正在编辑的条目。
   public synchronized boolean remove(String key) throws IOException {
+    //DiskLruCache如果没被关闭，并且KEY命名符合要求
     checkNotClosed();
     validateKey(key);
+    //获取实体
     Entry entry = lruEntries.get(key);
+    //如果不是在编辑
     if (entry == null || entry.currentEditor != null) {
       return false;
     }
-
+    //遍历该KEY 所有数量的缓存，并统统删除
     for (int i = 0; i < valueCount; i++) {
+      //通过名称拼接获取最开始的缓存文件
       File file = entry.getCleanFile(i);
+      //如果文件存在，且未被删除
       if (file.exists() && !file.delete()) {
         throw new IOException("failed to delete " + file);
       }
+      //从总大小中减去该文件大小
       size -= entry.lengths[i];
+      //将刚才的文件大小标记为零
       entry.lengths[i] = 0;
     }
 
+    //冗余操作数加1
     redundantOpCount++;
+    //在日志文件中记录该次操作
     journalWriter.append(REMOVE + ' ' + key + '\n');
+    //实体map中彻底移除该key
     lruEntries.remove(key);
-
+    //如果需要重建日志，那么线程池提交清理
     if (journalRebuildRequired()) {
       executorService.submit(cleanupCallable);
     }
@@ -627,7 +644,7 @@ public final class DiskLruCache implements Closeable {
   public synchronized boolean isClosed() {
     return journalWriter == null;
   }
-
+  //可写性如果是空，就意味着已经被关闭
   private void checkNotClosed() {
     if (journalWriter == null) {
       throw new IllegalStateException("cache is closed");
@@ -672,7 +689,7 @@ public final class DiskLruCache implements Closeable {
     close();
     Util.deleteContents(directory);
   }
-
+  //验证一下KEY 是否符合名称的正则要求
   private void validateKey(String key) {
     Matcher matcher = LEGAL_KEY_PATTERN.matcher(key);
     if (!matcher.matches()) {
