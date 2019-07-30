@@ -63,7 +63,7 @@ final class Util {
       }
     }
   }
-
+  //忽略其他错误，结束线程
   static void closeQuietly(/*Auto*/Closeable closeable) {
     if (closeable != null) {
       try {
