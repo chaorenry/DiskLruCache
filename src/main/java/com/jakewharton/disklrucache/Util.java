@@ -30,7 +30,7 @@ final class Util {
 
   private Util() {
   }
-
+  //通过buffer 将 inputsteam 转换为String
   static String readFully(Reader reader) throws IOException {
     try {
       StringWriter writer = new StringWriter();

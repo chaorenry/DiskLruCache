@@ -520,18 +520,24 @@ public final class DiskLruCache implements Closeable {
     return edit(key, ANY_SEQUENCE_NUMBER);
   }
 
-  private synchronized Editor edit(String key, long expectedSequenceNumber) throws IOException {
+  private synchronized Editor edit(String key, long expectedSequenceNumber //预期的序列号
+  ) throws IOException {
+    //检查未关闭
     checkNotClosed();
     validateKey(key);
     Entry entry = lruEntries.get(key);
     if (expectedSequenceNumber != ANY_SEQUENCE_NUMBER && (entry == null
         || entry.sequenceNumber != expectedSequenceNumber)) {
+      //期望序列号不违法，但是装载实体为空或者期望序列号不违法，但装载实体最后一个序列号不是期望序列号
       return null; // Snapshot is stale.
     }
+
     if (entry == null) {
+      //如果装载实体为空，且期望序列号违法，填充进去
       entry = new Entry(key);
       lruEntries.put(key, entry);
     } else if (entry.currentEditor != null) {
+      //如果已经有其他editor
       return null; // Another edit is in progress.
     }
 
@@ -539,6 +545,7 @@ public final class DiskLruCache implements Closeable {
     entry.currentEditor = editor;
 
     // Flush the journal before creating files to prevent file leaks.
+    //在创建文件之前刷新日志以防止文件泄漏。
     journalWriter.write(DIRTY + ' ' + key + '\n');
     journalWriter.flush();
     return editor;
@@ -749,6 +756,7 @@ public final class DiskLruCache implements Closeable {
   }
 
   /** A snapshot of the values for an entry. */
+  //将缓存实体转换为一个实例，每个版本的实体都是一个inputsteam
   public final class Snapshot implements Closeable {
     private final String key;
     private final long sequenceNumber;
